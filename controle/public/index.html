@@ -1,0 +1,434 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#121418">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icone-192.png">
+<link rel="apple-touch-icon" href="icone-192.png">
+<title>Controle da TV</title>
+<style>
+  :root {
+    --fundo: #121418;
+    --botao: #22252c;
+    --botao-ativo: #3b404c;
+    --borda: #2e323b;
+    --texto: #e9eaee;
+    --suave: #9298a3;
+    --destaque: #f5b400;
+    --ligada: #3ccf6e;
+    --erro: #ff6b6b;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; background: var(--fundo); color: var(--texto); }
+  body {
+    font: 16px/1.3 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    display: flex; flex-direction: column;
+    padding: 16px;
+    padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+    max-width: 440px; margin: 0 auto;
+    overscroll-behavior: none; user-select: none; -webkit-user-select: none;
+  }
+  /* Espacamentos com margem (e nao "gap"/"min()"/"aspect-ratio"): o WebView de Androids antigos nao entende */
+  body > * + * { margin-top: 18px; }
+  button {
+    font: inherit; color: inherit; background: var(--botao); border: 1px solid var(--borda);
+    border-radius: 16px; touch-action: none; cursor: pointer;
+    display: grid; place-items: center; transition: background .08s, transform .08s;
+  }
+  button.apertado { background: var(--botao-ativo); transform: scale(.96); }
+  button:disabled { opacity: .5; }
+  svg { width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+  header { display: flex; align-items: center; justify-content: space-between; }
+  #estado { display: flex; align-items: center; color: var(--suave); }
+  #estado::before { content: ""; width: 10px; height: 10px; margin-right: 8px; border-radius: 50%; background: var(--suave); }
+  #estado.ligada { color: var(--texto); }
+  #estado.ligada::before { background: var(--ligada); box-shadow: 0 0 8px var(--ligada); }
+  #desligar { width: 48px; height: 48px; border-radius: 50%; color: var(--erro); }
+
+  #tv {
+    height: 76px; font-size: 22px; font-weight: 700; letter-spacing: .5px;
+    background: var(--destaque); color: #1a1400; border: 0; border-radius: 20px;
+    display: flex; justify-content: center; align-items: center;
+  }
+  #tv svg { width: 30px; height: 30px; margin-right: 12px; }
+  #tv.apertado { background: #d89f00; }
+
+  [hidden] { display: none !important; }
+
+  #modos { display: flex; padding: 4px; background: var(--botao); border: 1px solid var(--borda); border-radius: 14px; }
+  #modos button { flex: 1; height: 40px; border: 0; border-radius: 10px; background: transparent; color: var(--suave); touch-action: manipulation; }
+  #modos button + button { margin-left: 4px; }
+  #modos button.ativo { background: var(--botao-ativo); color: var(--texto); }
+
+  #direcional {
+    position: relative; width: 78vw; height: 78vw; max-width: 300px; max-height: 300px; margin: 24px auto 0;
+    border-radius: 50%; background: var(--botao); border: 1px solid var(--borda);
+  }
+  #direcional button { position: absolute; border: 0; background: transparent; border-radius: 50%; width: 33%; height: 33%; }
+  #direcional button.apertado { background: var(--botao-ativo); }
+  #direcional [data-tecla=cima]     { top: 2%;    left: 33.5%; }
+  #direcional [data-tecla=baixo]    { bottom: 2%; left: 33.5%; }
+  #direcional [data-tecla=esquerda] { left: 2%;   top: 33.5%; }
+  #direcional [data-tecla=direita]  { right: 2%;  top: 33.5%; }
+  #direcional [data-tecla=ok] {
+    top: 30%; left: 30%; width: 40%; height: 40%;
+    background: var(--botao-ativo); border: 1px solid var(--borda); font-weight: 700; font-size: 20px;
+  }
+  #direcional [data-tecla=ok].apertado { background: #4b5160; }
+
+  /* Touchpad: arrastar mexe a setinha da TV, tocar clica, 2 dedos rolam */
+  #mouse { margin-top: 24px; }
+  #pad {
+    height: 62vw; max-height: 244px; background: var(--botao); border: 1px solid var(--borda);
+    border-radius: 20px 20px 0 0; touch-action: none;
+    display: flex; align-items: center; justify-content: center; text-align: center;
+    color: var(--suave); font-size: 14px; line-height: 1.6;
+  }
+  #pad.tocando { background: #282c34; }
+  #clique { width: 100%; height: 56px; border-top: 0; border-radius: 0 0 20px 20px; font-weight: 600; }
+
+  .linha { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .linha.duas { grid-template-columns: repeat(2, 1fr); }
+  .linha button { height: 64px; }
+  #midia [data-acao=pausar] { color: var(--destaque); }
+
+  form { display: flex; }
+  input {
+    flex: 1; min-width: 0; font: inherit; color: inherit; background: var(--botao);
+    border: 1px solid var(--borda); border-radius: 14px; padding: 0 14px; height: 52px;
+  }
+  form button { padding: 0 18px; height: 52px; margin-left: 10px; touch-action: manipulation; }
+
+  #baixar-app { color: var(--suave); text-align: center; font-size: 14px; }
+  .no-app #baixar-app { display: none; }
+
+  #aviso {
+    position: fixed; left: 16px; right: 16px; bottom: 16px; bottom: max(16px, env(safe-area-inset-bottom));
+    max-width: 408px; margin: 0 auto; padding: 12px 16px; border-radius: 12px;
+    background: #3a1d1f; color: #ffd7d7; text-align: center;
+    opacity: 0; transform: translateY(10px); transition: .2s; pointer-events: none;
+  }
+  #aviso.visivel { opacity: 1; transform: none; }
+  #aviso.info { background: #23272f; color: var(--texto); }
+</style>
+</head>
+<body>
+  <header>
+    <span id="estado">Conectando...</span>
+    <button id="desligar" aria-label="Desligar a TV">
+      <svg viewBox="0 0 24 24"><path d="M12 3v9"/><path d="M6.3 6.8a8 8 0 1 0 11.4 0"/></svg>
+    </button>
+  </header>
+
+  <button id="tv">
+    <svg viewBox="0 0 24 24"><rect x="2.5" y="5" width="19" height="13" rx="2"/><path d="M8 21h8"/></svg>
+    <span>TV</span>
+  </button>
+
+  <div id="modos">
+    <button data-modo="setas" class="ativo">Setas</button>
+    <button data-modo="mouse">Mouse</button>
+  </div>
+
+  <div id="direcional">
+    <button data-tecla="cima" data-repetir aria-label="Cima"><svg viewBox="0 0 24 24"><path d="m6 15 6-6 6 6"/></svg></button>
+    <button data-tecla="esquerda" data-repetir aria-label="Esquerda"><svg viewBox="0 0 24 24"><path d="m15 6-6 6 6 6"/></svg></button>
+    <button data-tecla="ok">OK</button>
+    <button data-tecla="direita" data-repetir aria-label="Direita"><svg viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg></button>
+    <button data-tecla="baixo" data-repetir aria-label="Baixo"><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button>
+  </div>
+
+  <div id="mouse" hidden>
+    <div id="pad">Arraste para mexer a setinha<br>Toque para clicar · 2 dedos rolam</div>
+    <button id="clique">Clique</button>
+  </div>
+
+  <div class="linha" id="midia">
+    <button data-acao="episodio/anterior" aria-label="Episodio anterior"><svg viewBox="0 0 24 24"><path d="M18 6v12l-9-6z"/><path d="M6 6v12"/></svg></button>
+    <button data-acao="pausar" aria-label="Pausar ou continuar"><svg viewBox="0 0 24 24"><path d="M5 5v14l8-7z"/><path d="M16 5v14M20 5v14"/></svg></button>
+    <button data-acao="episodio/proximo" aria-label="Proximo episodio"><svg viewBox="0 0 24 24"><path d="M6 6v12l9-6z"/><path d="M18 6v12"/></svg></button>
+  </div>
+
+  <div class="linha duas">
+    <button data-tecla="voltar" aria-label="Voltar"><svg viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></button>
+    <button data-tecla="home" aria-label="Inicio"><svg viewBox="0 0 24 24"><path d="m3 10 9-7 9 7"/><path d="M5 9v11h14V9"/></svg></button>
+  </div>
+
+  <div class="linha">
+    <button data-tecla="volmenos" data-repetir aria-label="Diminuir volume"><svg viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9z"/><path d="M17 12h4"/></svg></button>
+    <button data-tecla="mudo" aria-label="Mudo"><svg viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9z"/><path d="m17 9 4 6M21 9l-4 6"/></svg></button>
+    <button data-tecla="volmais" data-repetir aria-label="Aumentar volume"><svg viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9z"/><path d="M17 12h4M19 10v4"/></svg></button>
+  </div>
+
+  <form id="digitar">
+    <input name="texto" placeholder="Digitar na TV (ex.: busca)" autocomplete="off" enterkeyhint="send">
+    <button>Enviar</button>
+  </form>
+
+  <a id="baixar-app" href="controle-tv.apk">Baixar o app "TV" para o celular</a>
+
+  <div id="aviso" role="status"></div>
+
+<script>
+const $ = s => document.querySelector(s);
+
+// Web app: o service worker so existe em endereco "seguro" (veja o README).
+// Dentro do app "TV" ele nao e usado (o app cuida do "sem conexao") e so atrapalharia.
+const noApp = navigator.userAgent.includes('ControleTV-App');
+if (noApp) document.body.classList.add('no-app'); // dentro do app, esconde o link "Baixar o app"
+if ('serviceWorker' in navigator) {
+  if (noApp) {
+    navigator.serviceWorker.getRegistrations().then(rs => rs.forEach(r => r.unregister()));
+  } else {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  }
+}
+
+async function api(rota, corpo) {
+  const opcoes = rota === 'estado' ? {} : {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(corpo || {}),
+  };
+  const r = await fetch('/api/' + rota, opcoes);
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.erro || 'Erro ' + r.status);
+  return j;
+}
+
+let timerAviso;
+function avisar(texto, info) {
+  const a = $('#aviso');
+  a.textContent = texto;
+  a.classList.toggle('info', !!info); // info = aviso neutro; sem isso, e erro
+  a.classList.add('visivel');
+  clearTimeout(timerAviso);
+  timerAviso = setTimeout(() => a.classList.remove('visivel'), 3000);
+}
+
+function vibrar() {
+  if (navigator.vibrate) navigator.vibrate(12);
+}
+
+// --- Estado da TV --------------------------------------------------------------
+let ligando = false;
+function mostrarEstado(ligada) {
+  const e = $('#estado');
+  if (ligando) return;
+  e.textContent = ligada ? 'TV ligada' : 'TV desligada';
+  e.classList.toggle('ligada', ligada);
+}
+
+async function atualizarEstado() {
+  try {
+    const s = await api('estado');
+    mostrarEstado(s.ligada);
+  } catch {
+    $('#estado').textContent = 'Sem conexao com o PC';
+    $('#estado').classList.remove('ligada');
+  }
+}
+atualizarEstado();
+setInterval(() => { if (!document.hidden) atualizarEstado(); }, 5000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) atualizarEstado(); });
+
+// --- Teclas (segurar repete as setas e o volume) ----------------------------------
+let ultimoErro = 0;
+async function enviar(tecla) {
+  try {
+    await api('tecla/' + tecla);
+  } catch (e) {
+    // Nao enche a tela de avisos se a pessoa segurar um botao com a TV desligada
+    if (Date.now() - ultimoErro > 2000) avisar(e.message);
+    ultimoErro = Date.now();
+    throw e;
+  }
+}
+
+for (const b of document.querySelectorAll('[data-tecla]')) {
+  let segurando = false, timer;
+  const tecla = b.dataset.tecla;
+  const repete = b.hasAttribute('data-repetir');
+
+  b.addEventListener('pointerdown', async e => {
+    e.preventDefault();
+    segurando = true;
+    b.classList.add('apertado');
+    vibrar();
+    try { await enviar(tecla); } catch { return; }
+    if (!repete) return;
+    // Cada repeticao espera a anterior terminar, para nao acumular teclas atrasadas
+    timer = setTimeout(async function repetir() {
+      if (!segurando) return;
+      try { await enviar(tecla); } catch { return; }
+      if (segurando) timer = setTimeout(repetir, 40);
+    }, 380);
+  });
+  const soltar = () => { segurando = false; clearTimeout(timer); b.classList.remove('apertado'); };
+  for (const t of ['pointerup', 'pointercancel', 'pointerleave']) b.addEventListener(t, soltar);
+  b.addEventListener('contextmenu', e => e.preventDefault());
+}
+
+// --- TV e desligar ----------------------------------------------------------------
+function efeitoToque(b) {
+  b.addEventListener('pointerdown', () => b.classList.add('apertado'));
+  for (const t of ['pointerup', 'pointercancel', 'pointerleave']) b.addEventListener(t, () => b.classList.remove('apertado'));
+}
+efeitoToque($('#tv'));
+efeitoToque($('#desligar'));
+
+// --- Pausar e episodios (o servidor sabe lidar com o player do YouCine) ---------------
+for (const b of document.querySelectorAll('[data-acao]')) {
+  efeitoToque(b);
+  b.addEventListener('click', async () => {
+    const acao = b.dataset.acao;
+    const episodio = acao.startsWith('episodio/');
+    if (b.disabled) return;
+    vibrar();
+    // Trocar de episodio leva 1-2 s (o servidor abre a lista e navega nela)
+    if (episodio) { b.disabled = true; avisar(acao.endsWith('proximo') ? 'Indo para o proximo episodio...' : 'Voltando um episodio...', true); }
+    try {
+      await api(acao);
+      if (episodio) $('#aviso').classList.remove('visivel');
+    } catch (err) {
+      avisar(err.message);
+    } finally {
+      b.disabled = false;
+    }
+  });
+}
+
+// --- Setas ou mouse ------------------------------------------------------------------
+function mudarModo(modo) {
+  for (const b of document.querySelectorAll('[data-modo]')) b.classList.toggle('ativo', b.dataset.modo === modo);
+  $('#direcional').hidden = modo !== 'setas';
+  $('#mouse').hidden = modo !== 'mouse';
+  try { localStorage.setItem('modo', modo); } catch {}
+}
+for (const b of document.querySelectorAll('[data-modo]')) b.addEventListener('click', () => mudarModo(b.dataset.modo));
+try { if (localStorage.getItem('modo') === 'mouse') mudarModo('mouse'); } catch {}
+
+// --- Touchpad --------------------------------------------------------------------------
+const VELOCIDADE = 2;   // pixels da TV por pixel do dedo (o Android ainda acelera os movimentos rapidos)
+const PASSO_RODA = 36;  // quanto os 2 dedos andam para rolar um "dente" da rodinha
+// O movimento vai se acumulando enquanto um pedido esta a caminho, entao nunca ha fila de atraso
+const mouse = { dx: 0, dy: 0, roda: 0, clique: false, ocupado: false };
+function enviarMouse() {
+  if (mouse.ocupado) return;
+  const dx = Math.trunc(mouse.dx), dy = Math.trunc(mouse.dy), roda = mouse.roda, clique = mouse.clique;
+  if (!dx && !dy && !roda && !clique) return;
+  mouse.dx -= dx; mouse.dy -= dy; mouse.roda = 0; mouse.clique = false;
+  mouse.ocupado = true;
+  api('mouse', { dx, dy, roda, clique })
+    .catch(e => {
+      mouse.dx = mouse.dy = mouse.roda = 0;
+      if (Date.now() - ultimoErro > 2000) avisar(e.message);
+      ultimoErro = Date.now();
+    })
+    .then(() => { mouse.ocupado = false; enviarMouse(); });
+}
+
+function clicar() {
+  vibrar();
+  mouse.clique = true;
+  enviarMouse();
+}
+
+const pad = $('#pad');
+const dedos = new Map(); // pointerId -> ultima posicao
+let toque = null;        // o toque atual, enquanto ainda pode ser um clique
+let rolagem = 0;
+pad.addEventListener('pointerdown', e => {
+  e.preventDefault();
+  try { pad.setPointerCapture(e.pointerId); } catch {}
+  dedos.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  toque = dedos.size === 1 ? { inicio: Date.now(), andou: 0 } : null;
+  pad.classList.add('tocando');
+});
+pad.addEventListener('pointermove', e => {
+  const d = dedos.get(e.pointerId);
+  if (!d) return;
+  const mx = e.clientX - d.x, my = e.clientY - d.y;
+  d.x = e.clientX; d.y = e.clientY;
+  if (toque) toque.andou += Math.abs(mx) + Math.abs(my);
+  if (dedos.size === 1) {
+    mouse.dx += mx * VELOCIDADE;
+    mouse.dy += my * VELOCIDADE;
+  } else {
+    // 2 dedos: rola como a rodinha (arrastar para cima desce a pagina, como no celular)
+    rolagem += my / dedos.size;
+    while (Math.abs(rolagem) >= PASSO_RODA) {
+      const s = rolagem > 0 ? 1 : -1;
+      mouse.roda += s;
+      rolagem -= s * PASSO_RODA;
+    }
+  }
+  enviarMouse();
+});
+function soltarDedo(e) {
+  if (!dedos.delete(e.pointerId)) return;
+  // Toque rapido sem arrastar = clique
+  if (e.type === 'pointerup' && toque && !dedos.size && Date.now() - toque.inicio < 250 && toque.andou < 10) clicar();
+  if (!dedos.size) { pad.classList.remove('tocando'); rolagem = 0; toque = null; }
+}
+pad.addEventListener('pointerup', soltarDedo);
+pad.addEventListener('pointercancel', soltarDedo);
+pad.addEventListener('contextmenu', e => e.preventDefault());
+
+efeitoToque($('#clique'));
+$('#clique').addEventListener('pointerdown', e => { e.preventDefault(); clicar(); });
+
+$('#tv').addEventListener('click', async () => {
+  if (ligando) return;
+  vibrar();
+  ligando = true;
+  const inicio = Date.now();
+  const e = $('#estado');
+  const contar = () => { e.textContent = `Ligando... ${Math.round((Date.now() - inicio) / 1000)} s`; };
+  contar();
+  const relogio = setInterval(contar, 1000);
+  $('#tv').disabled = true;
+  try {
+    await api('tv');
+    ligando = false;
+    mostrarEstado(true);
+  } catch (err) {
+    ligando = false;
+    avisar(err.message);
+    atualizarEstado();
+  } finally {
+    clearInterval(relogio);
+    $('#tv').disabled = false;
+  }
+});
+
+$('#desligar').addEventListener('click', async () => {
+  if (!confirm('Desligar a TV?')) return;
+  try {
+    await api('desligar');
+    mostrarEstado(false);
+  } catch (err) {
+    avisar(err.message);
+  }
+});
+
+// --- Digitar ----------------------------------------------------------------------
+$('#digitar').addEventListener('submit', async e => {
+  e.preventDefault();
+  const campo = e.target.texto;
+  if (!campo.value.trim()) return;
+  try {
+    await api('texto', { texto: campo.value });
+    campo.value = '';
+    campo.blur();
+  } catch (err) {
+    avisar(err.message);
+  }
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+*.apk
+*.idsig
+*.dex
+*.class
+*.jks
+*.keystore
+*.log
+.env
+.env.*
+node_modules/
+**/obra/
+*.zip
